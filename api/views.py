@@ -7,10 +7,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Document, QueryLog, UserSession
-from .serializers import DocumentSerializer, LoginSerializer, QueryLogSerializer, RegisterSerializer
+from .serializers import DocumentSerializer, LoginSerializer, QueryLogSerializer, RegisterSerializer, AskAISerializer
 from .uploads import PayloadTooLarge, extract_text
 from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from .permissions import IsOwner
+from . import llm
 
 def session_payload(session):
     return {"token": session.token, "expires_at": session.expires_at}
@@ -102,3 +103,25 @@ class QueryCreateView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+class AskAIView(APIView):
+    def post(self, request):
+        serializer = AskAISerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        prompt = serializer.validated_data["prompt"]
+
+        try:
+            answer = llm.ask(prompt=prompt)
+        except llm.LLMError:
+            return Response(
+                {"detail": "The AI service is unavailable. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        QueryLog.objects.create(
+            user=request.user,
+            query_text=prompt,
+            result_summary=answer,
+            kind=QueryLog.Kind.ASK_AI
+        )
+        return Response({'response': answer})

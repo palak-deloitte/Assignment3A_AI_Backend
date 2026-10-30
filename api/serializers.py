@@ -31,5 +31,8 @@ class QueryLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QueryLog
-        fields = ["id", "query_text", "result_summary", "created_at", "user"]
-        read_only_fields = ["id", "result_summary", "created_at", "user"]
+        fields = ["id", "query_text", "result_summary", "created_at", "user", "kind"]
+        read_only_fields = ["id", "result_summary", "created_at", "user", "kind"]
+
+class AskAISerializer(serializers.Serializer):
+    prompt = serializers.CharField(max_length=4000)

@@ -29,20 +29,26 @@ class Document(models.Model):
         return self.title
 
 class QueryLog(models.Model):
+    class Kind(models.TextChoices):
+        QUERY = "query", "Query"          # Assignment 2's POST /query
+        ASK_AI = "ask_ai", "Ask AI"       # POST /api/ask-ai
+        RAG = "rag", "RAG query"          # POST /api/rag-query
+
     query_text = models.TextField()
     result_summary = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="query_logs"
+        related_name="query_logs",
     )
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.QUERY)
 
     class Meta:
         ordering = ["-created_at", "-id"]
 
     def __str__(self):
-        return self.query_text
+        return self.query_text[:50]
 
 class UserSession(models.Model):
     user = models.ForeignKey(

@@ -11,9 +11,13 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
 
 
 # Quick-start development settings - unsuitable for production
@@ -143,3 +147,13 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 ALLOWED_UPLOAD_EXTENSIONS = {".txt", ".pdf"}
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
+# ---- AI settings ----
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-5-5")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+CHUNK_SIZE = 1000          
+CHUNK_OVERLAP = 200        
+RAG_TOP_K = 4             
+VECTOR_STORE_DIR = BASE_DIR / "vector_store"
