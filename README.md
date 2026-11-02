@@ -1,87 +1,80 @@
-# Assignment 2: Django Backend Service
+# Assignment 3A: AI Backend (Django + LLM)
 
-A Django REST Framework backend with token authentication, document upload and management, query history, and pagination.
+A Django REST Framework backend with token authentication, document management, and AI endpoints for prompt-template Q&A, document ingestion (chunking and embeddings), and retrieval-based question answering (RAG) with source chunks.
+
+This project extends the Assignment 2 backend.
 
 ## Endpoints
 
-| Method | Path              | Description                                                | Auth  |
-| ------ | ----------------- | ---------------------------------------------------------- | ----- |
-| POST   | `/auth/register`  | Create an account; returns a token                         | None  |
-| POST   | `/auth/login`     | Log in; returns a token                                    | None  |
-| POST   | `/auth/logout`    | Invalidate the current token                               | Token |
-| POST   | `/documents`      | Upload a file (.txt/.pdf) or send JSON `title` + `content` | Token |
-| GET    | `/documents`      | List your documents (paginated)                            | Token |
-| GET    | `/documents/{id}` | Retrieve one of your documents                             | Token |
-| DELETE | `/documents/{id}` | Delete a document                                          | Token |
-| POST   | `/query`          | Record a query in your history                             | Token |
-| GET    | `/queries`        | List your query history (paginated)                        | Token |
+### AI endpoints
 
-All endpoints except register and login require the header:
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/ask-ai` | Body `{"prompt": "..."}`. The prompt is inserted into a fixed prompt template and sent to the LLM. Returns `{"response": "..."}` |
+| POST | `/api/ingest-doc` | Body `{"document_id": 1}`. Chunks the document and stores embeddings. Returns `{"document_id", "status", "chunk_count"}` |
+| POST | `/api/rag-query` | Body `{"query": "..."}`. Retrieves relevant chunks and generates an answer. Returns `{"answer": "...", "sources": [{"document_id", "chunk_text"}]}` |
+| GET | `/api/query-history` | Your AI query history (paginated) |
 
-```
-Authorization: Token <token>
-```
+### Account and document endpoints (from Assignment 2)
 
-### Status codes
+| Method | Path | Description |
+|---|---|---|
+| POST | `/auth/register`, `/auth/login` | Create an account or log in; returns a token (open endpoints) |
+| POST | `/auth/logout` | Invalidate the current token |
+| POST | `/documents` | Upload a .txt/.pdf file or send JSON `title` + `content` |
+| GET | `/documents` | List your documents (paginated) |
+| GET | `/documents/{id}` | Retrieve one of your documents |
+| DELETE | `/documents/{id}` | Delete a document **and its embeddings** |
+| POST | `/query` | Record a plain query in your history |
+| GET | `/queries` | List all your recorded queries (paginated) |
 
-| Endpoint                         | Code | When                                                                      |
-| -------------------------------- | ---- | ------------------------------------------------------------------------- |
-| `/auth/register`                 | 201  | Account created                                                           |
-|                                  | 400  | Username taken, weak password, or missing field                           |
-| `/auth/login`                    | 200  | Success                                                                   |
-|                                  | 401  | Wrong username or password                                                |
-| `/auth/logout`                   | 204  | Session deleted                                                           |
-| Any protected endpoint           | 401  | Token missing, invalid, or expired                                        |
-| `POST /documents`                | 201  | Document created                                                          |
-|                                  | 400  | Missing or empty title or content, unsupported file type, unreadable file |
-|                                  | 413  | File or content larger than the limit                                     |
-| `GET /documents/{id}`            | 200  | Success                                                                   |
-|                                  | 404  | Not found, **or owned by someone else**                                   |
-| `DELETE /documents/{id}`         | 204  | Deleted                                                                   |
-|                                  | 403  | Document exists but you do not own it                                     |
-|                                  | 404  | Document does not exist                                                   |
-| `POST /query`                    | 201  | Query logged                                                              |
-|                                  | 400  | `query_text` missing or empty                                             |
-| `GET /documents`, `GET /queries` | 200  | Success                                                                   |
-|                                  | 404  | `page` is out of range                                                    |
+All endpoints except register and login require the header `Authorization: Token <token>`. Tokens expire after 24 hours.
 
-### Pagination
+### Status codes (AI endpoints)
 
-List endpoints accept `page` and `page_size` (default 10, maximum 100) and return:
+| Endpoint | Code | When |
+|---|---|---|
+| `/api/ask-ai` | 200 | Success |
+| | 400 | `prompt` missing, empty, or longer than 4000 characters |
+| | 401 | Token missing, invalid, or expired |
+| | 502 | The LLM provider failed (including rate limits) |
+| `/api/ingest-doc` | 200 | Document ingested |
+| | 400 | Invalid `document_id`, or the document has no text |
+| | 401 | Token missing, invalid, or expired |
+| | 404 | Document does not exist or is not yours |
+| | 503 | Indexing failed internally |
+| `/api/rag-query` | 200 | Success (also returned when you have no ingested documents, with an explanatory answer and empty `sources`) |
+| | 400 | `query` missing, empty, or longer than 2000 characters |
+| | 401 | Token missing, invalid, or expired |
+| | 502 | The LLM provider failed |
+| | 503 | Searching the vector store failed internally |
+| `/api/query-history` | 200 | Paginated results |
+| | 401 | Token missing, invalid, or expired |
+| | 404 | `page` out of range |
 
-```json
-{
-  "count": 25,
-  "next": "http://.../documents?page=2",
-  "previous": null,
-  "results": []
-}
-```
+Pagination is `page` and `page_size` (default 10, maximum 100) and returns `count`, `next`, `previous`, `results`, newest first. History entries include `query_text`, `result_summary` (the AI's answer), `kind` (`ask_ai` or `rag`), and `created_at`.
 
-Results are ordered newest first.
+## AI design
 
-## Authentication
+| Setting | Value |
+|---|---|
+| **LLM** | Claude (`claude-haiku-5-5` by default), through `langchain-anthropic`. Configurable with `LLM_MODEL`. |
+| **Embedding model** | `sentence-transformers/all-MiniLM-L6-v2`, run locally (384-dimensional vectors) |
+| **Vector store** | **FAISS** (`faiss-cpu`) through LangChain, used for all retrieval |
+| **Chunk size** | **1000 characters** |
+| **Chunk overlap** | **200 characters** |
+| **Chunking method** | `RecursiveCharacterTextSplitter` (prefers paragraph, then sentence, then word boundaries). Text is cleaned first, so soft line breaks (common in PDFs) become spaces. |
+| **Chunks retrieved per query** | 4 (`RAG_TOP_K`) |
+| **LLM limits** | 30 s timeout, 1024 max output tokens |
 
-Login and registration create a `UserSession` row holding a random 64-character token that expires after **24 hours**. A custom DRF authentication class (`api/authentication.py`) looks the token up on every request, rejects expired sessions, and sets `request.user`. Logout deletes the session. Every user can hold several active sessions (for example, one per device).
+These values are defined in `config/settings.py`.
 
-## Models
-
-| Model         | Fields                                           |
-| ------------- | ------------------------------------------------ |
-| `Document`    | id, title, content, uploaded_at, owner           |
-| `QueryLog`    | id, query_text, result_summary, created_at, user |
-| `UserSession` | id, user, token, created_at, expires_at          |
-
-## Design decisions
-
-- **Allowed file types:** `.txt` (UTF-8) and `.pdf`. Text is extracted on upload and stored in `Document.content`. The original file is not stored.
-- **Maximum size:** 5 MB for uploaded files and for JSON content (`MAX_UPLOAD_BYTES` in `config/settings.py`). Anything larger returns 413.
-- **Scanned PDFs** (images with no text layer) are rejected with 400, since there is no text to extract.
-- **Ownership:** all reads are filtered by owner. For `GET /documents/{id}`, other users' documents return 404 so their existence is not revealed. For `DELETE`, the document is looked up first and a non-owner receives 403, as the spec requires.
-- **The owner is never read from the request**, only taken from the authenticated user.
-- **`result_summary`** is left empty in this assignment. It will be populated by the RAG pipeline in Assignment 3A.
-- **Passwords** are hashed with Django's default hasher and validated with Django's password validators.
-- **URLs** have no trailing slash, matching the specification.
+- **Why local embeddings:** the LLM provider does not offer an embeddings API, and a local model needs no extra key, has no rate limits, and keeps document text on the machine.
+- **Per-user indexes:** each user has their own FAISS index in `vector_store/user_<id>/`. A user can only ever search their own chunks, so documents cannot leak between users. Each chunk stores its `document_id` in metadata.
+- **Re-ingesting** a document replaces its old chunks. **Deleting** a document removes its chunks.
+- **Prompt templates:** user input is never sent to the model on its own. `/api/ask-ai` and `/api/rag-query` use LangChain `ChatPromptTemplate`s with fixed system instructions, and the user text fills a placeholder in the human message.
+- **RAG prompt:** the model is told to answer only from the numbered context passages, to say so when the answer is not there, and to treat the context as reference material only. This reduces the effect of instructions hidden inside uploaded documents.
+- **History:** AI calls are recorded in `QueryLog` with a `kind` field. Only successful calls are recorded.
 
 ## Setup
 
@@ -97,7 +90,17 @@ python manage.py createsuperuser   # optional, for /admin/
 python manage.py runserver
 ```
 
-The API runs at http://127.0.0.1:8000/. The admin panel is at `/admin/`.
+Create a `.env` file (see `.env.example`):
+
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | API key for the LLM |
+| `LLM_MODEL` | Optional. Defaults to `claude-haiku-5-5` |
+| `HF_HUB_OFFLINE` | Optional. Set to `1` after the first run to stop checking Hugging Face for model updates |
+
+**First run:** the first request that needs embeddings downloads the embedding model (about 90 MB) and loads it into memory, which takes some time. The model is loaded once per server process, and later requests are fast. Restarting the dev server (it restarts itself when files change) loads the model again.
+
+Typical flow: register, log in, `POST /documents`, `POST /api/ingest-doc`, then `POST /api/rag-query`.
 
 ## Tests
 
@@ -105,25 +108,28 @@ The API runs at http://127.0.0.1:8000/. The admin panel is at `/admin/`.
 python -m pytest -v
 ```
 
-The suite uses DRF's `APIClient` and a temporary database, so your development data is never touched. It covers authentication and token expiry, document upload limits and file types, ownership rules (403 vs 404), pagination, and per-user isolation of documents and queries.
+The tests are fully offline. The LLM is replaced by a fake that records the messages it receives (so tests can check what the model was sent), embeddings are replaced by a small keyword-based fake, and the vector store is written to a temporary folder. The tests cover chunking, indexing, re-indexing and deletion, retrieval relevance and multi-document retrieval, per-user isolation, prompt-template usage, error mapping (400, 401, 404, 502, 503), and pagination.
 
 ## Project structure
 
 ```
-config/             project settings and root URLs
+config/              project settings and root URLs
 api/
-  models.py         Document, QueryLog, UserSession
-  authentication.py token authentication backed by UserSession
-  serializers.py    request and response validation
-  views.py          API views
-  permissions.py    IsOwner object permission
-  pagination.py     page size rules
-  uploads.py        file validation and text extraction
-  tests/            automated tests
+  models.py          Document, QueryLog (with kind), UserSession
+  authentication.py  token authentication backed by UserSession
+  views.py           API views
+  serializers.py     request and response validation
+  llm.py             prompt templates and the Claude client
+  rag.py             chunking, embeddings, FAISS storage and search
+  uploads.py         file validation and text extraction
+  pagination.py, permissions.py
+  tests/             automated tests
 ```
 
 ## Limitations
 
-- The 413 check runs after the server has received the file. A production deployment should also limit request size at the web server.
-- SQLite is used for development.
-- No token refresh: users log in again after 24 hours.
+- Ingestion runs inside the request, so large documents take a while. A production system would use a background worker.
+- Similarity search always returns the nearest chunks, even when none are truly relevant. The prompt makes the model say when the context does not contain the answer, but a similarity-score threshold would be a stricter fix.
+- Scanned PDFs without a text layer are rejected, since there is no text to extract.
+- FAISS indexes are local files, and metadata is stored with pickle, which is only safe because this application writes every file it loads. A deployment with several servers would need a hosted vector database.
+- Requests share the Claude API quota, so heavy use can return 502 when the provider rate-limits calls.
