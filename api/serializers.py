@@ -36,3 +36,9 @@ class QueryLogSerializer(serializers.ModelSerializer):
 
 class AskAISerializer(serializers.Serializer):
     prompt = serializers.CharField(max_length=4000)
+
+class IngestDocSerializer(serializers.Serializer):
+    document_id = serializers.IntegerField(min_value=1)
+
+class RagQuerySerializer(serializers.Serializer):
+    query = serializers.CharField(max_length=2000)

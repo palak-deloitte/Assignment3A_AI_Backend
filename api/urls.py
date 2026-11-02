@@ -10,4 +10,7 @@ urlpatterns = [
     path("query", views.QueryCreateView.as_view()),
     path("queries", views.QueryListView.as_view()),
     path("api/ask-ai", views.AskAIView.as_view()),
+    path("api/ingest-doc", views.IngestDocView.as_view()),
+    path("api/rag-query", views.RagQueryView.as_view()),
+    path("api/query-history", views.AIQueryHistoryView.as_view()),
 ]
